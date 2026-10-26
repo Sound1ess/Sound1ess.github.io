@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Последний Маяк</title>
+<script src="/sdk.js"></script>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+html,body{margin:0;height:100%;background:#05060f;color:#e8ecff;font-family:system-ui,Segoe UI,Roboto,sans-serif;overflow:hidden}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+#app{position:relative;z-index:1;height:100%;display:grid;grid-template-columns:1fr 380px}
+@media(max-width:800px){#app{grid-template-columns:1fr;grid-template-rows:55% 45%}}
+#left{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:10px}
+#light{font-size:clamp(28px,5vw,48px);font-weight:800;text-shadow:0 0 20px #ffd36b}
+#ps{opacity:.8}
+#beacon{width:min(40vmin,260px);height:min(40vmin,260px);border-radius:50%;border:none;cursor:pointer;
+background:radial-gradient(circle at 40% 35%,#fff8d6,#ffd36b 40%,#ff9a3c 75%,#b3541a);
+box-shadow:0 0 60px 20px rgba(255,190,80,.5),0 0 160px 60px rgba(255,150,40,.25);animation:pulse 3s infinite ease-in-out;transition:transform .05s}
+#beacon:active{transform:scale(.93)}
+@keyframes pulse{50%{box-shadow:0 0 90px 35px rgba(255,190,80,.65),0 0 220px 90px rgba(255,150,40,.3)}}
+#chap{max-width:480px;text-align:center;font-size:14px;opacity:.85;font-style:italic}
+#boost{color:#7dfcff;min-height:20px;font-weight:600}
+#right{background:rgba(10,12,30,.82);backdrop-filter:blur(8px);border-left:1px solid #2a3060;display:flex;flex-direction:column;min-height:0}
+#tabs{display:flex}
+#tabs button{flex:1;padding:12px;background:none;border:none;color:#9aa3d6;font-weight:700;cursor:pointer;border-bottom:2px solid transparent}
+#tabs button.on{color:#ffd36b;border-color:#ffd36b}
+#list{overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px;flex:1}
+.item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px;border-radius:10px;background:#141937;border:1px solid #2a3060;cursor:pointer}
+.item.off{opacity:.45;cursor:default}
+.item:not(.off):hover{border-color:#ffd36b}
+.item small{display:block;opacity:.7}
+.cost{white-space:nowrap;color:#ffd36b;font-weight:700}
+.cnt{font-size:22px;font-weight:800;opacity:.6}
+.story{background:#101533;border-left:3px solid #ffd36b;padding:10px;border-radius:6px;font-size:14px;line-height:1.4}
+.story.lock{opacity:.35}
+.pop{position:fixed;z-index:5;pointer-events:none;font-weight:800;color:#fff3b0;text-shadow:0 0 8px #ff9a3c;animation:up .9s forwards}
+@keyframes up{to{transform:translateY(-80px);opacity:0}}
+#modal{position:fixed;inset:0;z-index:9;background:rgba(0,0,10,.85);display:none;align-items:center;justify-content:center;padding:20px}
+#modal div{max-width:480px;background:#10143a;border:1px solid #ffd36b;border-radius:16px;padding:24px;text-align:center;line-height:1.5}
+#modal h2{margin-top:0;color:#ffd36b}
+.btn{background:linear-gradient(#ffd36b,#ff9a3c);color:#2a1300;border:none;padding:12px 20px;border-radius:10px;font-weight:800;cursor:pointer;font-size:15px}
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div id="app">
+ <div id="left">
+  <div id="light">0</div>
+  <div id="ps"></div>
+  <button id="beacon" aria-label="Маяк"></button>
+  <div id="boost"></div>
+  <div id="chap"></div>
+ </div>
+ <div id="right">
+  <div id="tabs">
+   <button data-t="up" class="on">Улучшения</button>
+   <button data-t="story">Хроники</button>
+   <button data-t="shop">Магазин</button>
+  </div>
+  <div id="list"></div>
+ </div>
+</div>
+<div id="modal"><div><h2 id="mt"></h2><p id="mx"></p><button class="btn" id="mb">Продолжить</button></div></div>
+
+<script>
+// ---------- ДАННЫЕ ----------
+const GENS=[
+ {id:'candle',n:'Свеча надежды',base:15,ps:0.2},
+ {id:'lamp',n:'Лампада предков',base:100,ps:1},
+ {id:'crystal',n:'Кристалл эха',base:1100,ps:8},
+ {id:'forge',n:'Звёздный горн',base:12000,ps:47},
+ {id:'portal',n:'Врата рассвета',base:130000,ps:260},
+ {id:'heart',n:'Сердце галактики',base:1.4e6,ps:1400}
+];
+const CHAPTERS=[
+ [0,'Тьма','Звёзды погасли одна за другой. Остался только ты — Хранитель и древний Маяк. Коснись его, и он вспомнит, что такое свет.'],
+ [100,'Первая искра','Маяк дрогнул. Где-то в пустоте открылся чей-то глаз. Тьма заметила тебя.'],
+ [2000,'Голоса','В свете Маяка слышны шёпоты прежних Хранителей: «Не останавливайся. Свет — это память».'],
+ [50000,'Город из пепла','Свет выхватил из мрака руины города, где когда-то жили те, кто зажёг первый Маяк.'],
+ [1e6,'Предательство','Ты узнаёшь правду: Маяк погасил не враг. Его погасили, чтобы тебя защитить. Но от чего?'],
+ [2e7,'Пожиратель','Из тьмы поднимается Пожиратель Света. Он не зол — он просто голоден, как был голоден всегда.'],
+ [5e8,'Рассвет','Свет коснулся последней звезды. Но круг замкнулся: каждый Хранитель когда-то был Пожирателем. Перерождение — единственный путь.']
+];
+const SHOP=[
+ {id:'x2_forever',n:'Благословение Маяка',d:'Весь свет ×2 навсегда',type:'perm'},
+ {id:'echo_pack',n:'Пакет Эха',d:'+5 Эха (постоянный бонус +10% за каждое)',type:'cons'}
+];
+// ---------- СОСТОЯНИЕ ----------
+let S={light:0,total:0,clicks:0,gens:{},clickLvl:0,echoes:0,chap:0,boostUntil:0,x2:false,seen:Date.now()};
+GENS.forEach(g=>S.gens[g.id]=0);
+let tab='up',ysdk=null,player=null,payments=null;
+const $=id=>document.getElementById(id);
+const fmt=n=>{if(n<1000)return n<10?n.toFixed(1).replace(/\.0$/,''):Math.floor(n)+'';
+ const u=['','K','M','B','T','Qa','Qi'];let i=0;while(n>=1000&&i<u.length-1){n/=1000;i++}return n.toFixed(2)+u[i]};
+const genCost=g=>Math.ceil(g.base*Math.pow(1.15,S.gens[g.id]));
+const clickCost=()=>Math.ceil(25*Math.pow(1.5,S.clickLvl));
+const clickPow=()=>(1+S.clickLvl*2)*mult();
+const mult=()=>(1+S.echoes*0.1)*(S.x2?2:1)*(Date.now()<S.boostUntil?2:1);
+const basePs=()=>GENS.reduce((a,g)=>a+S.gens[g.id]*g.ps,0);
+const ps=()=>basePs()*mult();
+const echoGain=()=>Math.floor(Math.sqrt(S.total/1e6));
+// ---------- СОХРАНЕНИЕ ----------
+function save(){S.seen=Date.now();try{localStorage.setItem('beacon',JSON.stringify(S))}catch(e){}
+ if(player)player.setData({s:S}).catch(()=>{})}
+async function load(){
+ let d=null;
+ try{d=JSON.parse(localStorage.getItem('beacon'))}catch(e){}
+ if(player){try{const r=await player.getData();if(r&&r.s&&(!d||r.s.seen>d.seen))d=r.s}catch(e){}}
+ if(d){S=Object.assign(S,d);GENS.forEach(g=>S.gens[g.id]=S.gens[g.id]||0);
+  const away=Math.min((Date.now()-S.seen)/1000,8*3600);
+  const gain=basePs()*(1+S.echoes*0.1)*(S.x2?2:1)*away*0.5;
+  if(gain>1){S.light+=gain;S.total+=gain;showModal('С возвращением!','Пока тебя не было, Маяк собрал '+fmt(gain)+' света.')}}
+}
+// ---------- ДЕЙСТВИЯ ----------
+function click(e){
+ const p=clickPow();S.light+=p;S.total+=p;S.clicks++;
+ const x=e.clientX||innerWidth/3,y=e.clientY||innerHeight/2;
+ const el=document.createElement('div');el.className='pop';el.textContent='+'+fmt(p);
+ el.style.left=(x-10+Math.random()*20)+'px';el.style.top=(y-30)+'px';document.body.appendChild(el);
+ setTimeout(()=>el.remove(),900);burst(x,y);
+}
+function buyGen(id){const g=GENS.find(x=>x.id===id),c=genCost(g);if(S.light>=c){S.light-=c;S.gens[id]++;render()}}
+function buyClick(){const c=clickCost();if(S.light>=c){S.light-=c;S.clickLvl++;render()}}
+function prestige(){const g=echoGain();if(g<1)return;
+ if(!confirm('Переродиться? Весь свет и постройки сбросятся, но ты получишь Эхо: '+g))return;
+ S.echoes+=g;S.light=0;S.total=0;S.clickLvl=0;GENS.forEach(x=>S.gens[x.id]=0);S.chap=Math.min(S.chap,CHAPTERS.length-1);save();render()}
+function showModal(t,x){$('mt').textContent=t;$('mx').textContent=x;$('modal').style.display='flex'}
+$('mb').onclick=()=>$('modal').style.display='none';
+function checkChapters(){
+ while(S.chap<CHAPTERS.length-1&&S.total>=CHAPTERS[S.chap+1][0]){S.chap++;showModal('Глава: '+CHAPTERS[S.chap][1],CHAPTERS[S.chap][2]);}
+}
+// ---------- ЯНДЕКС ----------
+function watchAd(){
+ if(!ysdk){S.boostUntil=Date.now()+120000;render();return}
+ ysdk.adv.showRewardedVideo({callbacks:{
+  onRewarded:()=>{S.boostUntil=Math.max(Date.now(),S.boostUntil)+120000;save()},
+  onError:()=>{},onClose:()=>{}}});
+}
+function buy(id){
+ if(!payments){if(location.hostname==='localhost'||location.protocol==='file:')applyPurchase(id);else alert('Покупки недоступны');return}
+ payments.purchase({id}).then(p=>{applyPurchase(id);if(SHOP.find(s=>s.id===id).type==='cons')payments.consumePurchase(p.purchaseToken)}).catch(()=>{});
+}
+function applyPurchase(id){if(id==='x2_forever')S.x2=true;if(id==='echo_pack')S.echoes+=5;save();render()}
+async function restorePurchases(){
+ if(!payments)return;
+ try{const list=await payments.getPurchases();
+  for(const p of list){if(p.productID==='x2_forever')S.x2=true;
+   if(p.productID==='echo_pack'){S.echoes+=5;payments.consumePurchase(p.purchaseToken)}}}catch(e){}
+}
+// ---------- UI ----------
+function render(){
+ const L=$('list');let h='';
+ if(tab==='up'){
+  h+=`<div class="item ${S.light>=clickCost()?'':'off'}" data-a="click"><div>Сила касания<small>Уровень ${S.clickLvl} · +${fmt(clickPow())} за клик</small></div><div class="cost">${fmt(clickCost())}</div></div>`;
+  GENS.forEach(g=>{const c=genCost(g);h+=`<div class="item ${S.light>=c?'':'off'}" data-a="gen" data-id="${g.id}"><div>${g.n}<small>+${fmt(g.ps*mult())}/сек каждая</small></div><div style="text-align:right"><div class="cnt">${S.gens[g.id]}</div><div class="cost">${fmt(c)}</div></div></div>`});
+  const eg=echoGain();
+  h+=`<div class="item ${eg>=1?'':'off'}" data-a="prestige"><div>✦ Перерождение<small>Эхо сейчас: ${S.echoes} (+${eg}). Каждое даёт +10% навсегда. Нужно ≥1M всего света.</small></div></div>`;
+ }else if(tab==='story'){
+  CHAPTERS.forEach((c,i)=>{h+= i<=S.chap?`<div class="story"><b>${c[1]}</b><br>${c[2]}</div>`:`<div class="story lock">🔒 Откроется при ${fmt(c[0])} света</div>`});
+ }else{
+  h+=`<div class="item" data-a="ad"><div>▶ Ускорение ×2<small>Посмотри рекламу — 2 минуты удвоенного света</small></div></div>`;
+  SHOP.forEach(s=>{const own=s.id==='x2_forever'&&S.x2;h+=`<div class="item ${own?'off':''}" data-a="buy" data-id="${s.id}"><div>${s.n}<small>${s.d}</small></div><div class="cost">${own?'Куплено':'Купить'}</div></div>`});
+ }
+ L.innerHTML=h;
+}
+$('list').onclick=e=>{const el=e.target.closest('.item');if(!el)return;const a=el.dataset.a;
+ if(a==='click')buyClick();else if(a==='gen')buyGen(el.dataset.id);else if(a==='prestige')prestige();
+ else if(a==='ad')watchAd();else if(a==='buy')buy(el.dataset.id)};
+$('tabs').onclick=e=>{const b=e.target.closest('button');if(!b)return;tab=b.dataset.t;
+ document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));render()};
+$('beacon').addEventListener('pointerdown',click);
+function hud(){
+ $('light').textContent=fmt(S.light);
+ $('ps').textContent=fmt(ps())+' света/сек · ×'+mult().toFixed(1);
+ const r=S.boostUntil-Date.now();
+ $('boost').textContent=r>0?'⚡ Ускорение ×2: '+Math.ceil(r/1000)+' с':'';
+ $('chap').textContent='«'+CHAPTERS[S.chap][1]+'»';
+}
+// ---------- ФОН ----------
+const cv=$('bg'),cx=cv.getContext('2d');let stars=[],parts=[];
+function resize(){cv.width=innerWidth;cv.height=innerHeight;stars=Array.from({length:150},()=>({x:Math.random()*cv.width,y:Math.random()*cv.height,r:Math.random()*1.5+.3,p:Math.random()*6}))}
+addEventListener('resize',resize);resize();
+function burst(x,y){for(let i=0;i<8;i++)parts.push({x,y,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6-1,l:1})}
+function draw(t){
+ cx.clearRect(0,0,cv.width,cv.height);
+ const bright=Math.min(1,.25+Math.log10(S.total+1)/10);
+ stars.forEach(s=>{cx.globalAlpha=bright*(.4+.6*Math.abs(Math.sin(t/1000+s.p)));cx.fillStyle='#fff';cx.beginPath();cx.arc(s.x,s.y,s.r,0,7);cx.fill()});
+ parts=parts.filter(p=>p.l>0);parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.l-=.03;cx.globalAlpha=p.l;cx.fillStyle='#ffd36b';cx.beginPath();cx.arc(p.x,p.y,3,0,7);cx.fill()});
+ requestAnimationFrame(draw);
+}
+// ---------- ЦИКЛ ----------
+let last=Date.now(),acc=0;
+setInterval(()=>{const n=Date.now(),dt=(n-last)/1000;last=n;const g=ps()*dt;S.light+=g;S.total+=g;
+ checkChapters();hud();acc+=dt;if(acc>1){acc=0;if(tab==='up'||tab==='shop')render()}},100);
+setInterval(save,15000);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)save()});
+// ---------- СТАРТ ----------
+(async()=>{
+ try{if(window.YaGames){ysdk=await YaGames.init();
+  try{player=await ysdk.getPlayer()}catch(e){}
+  try{payments=await ysdk.getPayments({signed:false})}catch(e){}}}catch(e){}
+ await load();await restorePurchases();render();hud();requestAnimationFrame(draw);
+ if(ysdk&&ysdk.features&&ysdk.features.LoadingAPI)ysdk.features.LoadingAPI.ready();
+})();
+</script>
+</body>
+</html>
